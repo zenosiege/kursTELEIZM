@@ -30,7 +30,7 @@ else()
 endif()
 
 # Openocd interface and target strings forming
-string(APPEND TARGET_DEVICE ".cfg")
+string(APPEND TARGET_DEVICE "stm32f3x.cfg")
 string(APPEND PROGRAMMER ".cfg")
 string(PREPEND TARGET_DEVICE "target/")
 string(PREPEND PROGRAMMER "interface/")
