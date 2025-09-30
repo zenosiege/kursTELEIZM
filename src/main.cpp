@@ -22,7 +22,8 @@ volatile uint32_t pulse_width = 0;
 volatile uint8_t capture_done = 0;
 
 void clock_setup(void) {
-    // Включаем тактирование
+    rcc_clock_setup_hsi(&rcc_hsi_configs[RCC_CLOCK_HSI_64MHZ]);
+   
     rcc_periph_clock_enable(RCC_GPIOA);
     rcc_periph_clock_enable(RCC_TIM1);
     rcc_periph_clock_enable(RCC_USART1);
@@ -54,7 +55,7 @@ void tim1_setup(void) {
 
     // Настраиваем таймер на частоту, например, 1 МГц (1 мкс на тик)
     // Используем системную частоту (по умолчанию)
-    timer_set_prescaler(TIM1, (rcc_apb2_frequency / 1000000) - 1); // 1 МГц
+    timer_set_prescaler(TIM1, (64000000 / 1000000) - 1); // 1 МГц
     timer_set_period(TIM1, 0xFFFF); // Максимальный период
 
     timer_ic_set_input(TIM1, TIM_IC1, TIM_IC_IN_TI1); // Прямой вход c TI1 (PA8)
@@ -96,6 +97,7 @@ void tim1_cc_isr(void) {
 void usart_send_string(const char *str) {
     while (*str) {
         usart_send_blocking(UART_PORT, *str++);
+        for (volatile uint32_t i = 0; i<8000; ++i);
     }
 }
 //==============================================================================
@@ -122,10 +124,7 @@ int main() {
         }
 
         gpio_toggle(GPIOE, GPIO15);
-
-        snprintf(buffer, sizeof(buffer), "Cycle Skip");
-        usart_send_string(buffer);
-
+        
         for (volatile uint32_t i = 0; i<2'000'000; ++i);
 
     }
