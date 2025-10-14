@@ -101,7 +101,7 @@ void tim1_cc_isr(void) {
 
 void uart_puts(char *string) {
     while (*string) {
-        usart_send_blocking(USART1, *string);
+        usart_send_blocking(USART2, *string);
         string++;
     }
 }
