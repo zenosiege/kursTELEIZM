@@ -4,6 +4,7 @@
 #include <libopencm3/cm3/nvic.h>
 #include <libopencm3/stm32/usart.h>
 #include <stdio.h>
+#include <math.h>
 
 // ЗЕЛЕНЫЙ TX, БЕЛЫЙ RX
 
@@ -17,11 +18,22 @@ volatile uint8_t capture_done = 0;
 
 volatile double range_output = 0;
 
+void usart_setup(void) {
+    usart_set_baudrate(USART2, 9600);
+    usart_set_databits(USART2, 8);
+    usart_set_stopbits(USART2, USART_STOPBITS_1);
+    usart_set_mode(USART2, USART_MODE_TX_RX);
+    usart_set_parity(USART2, USART_PARITY_NONE);
+    usart_set_flow_control(USART2, USART_FLOWCONTROL_NONE);
+    usart_enable(USART2);
+
+}
+
 void clock_setup(void) {
     rcc_clock_setup_hsi(&rcc_hsi_configs[RCC_CLOCK_HSI_64MHZ]);
    
     rcc_periph_clock_enable(RCC_GPIOA);
-
+    rcc_periph_clock_enable(RCC_USART2);// включаем USART2
     rcc_periph_clock_enable(RCC_TIM1);
 }
 
@@ -30,6 +42,9 @@ void gpio_setup(void) {
     gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO8);
     gpio_set_af(GPIOA, GPIO_AF6, GPIO8);
     
+    //USART1
+    gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO2 | GPIO3);
+    gpio_set_af(GPIOA, GPIO_AF7, GPIO2 | GPIO3); //PA2 (TX - зеленый) и PA3(RX - белый)
 }
 
 
@@ -63,6 +78,8 @@ void tim1_cc_isr(void) {
     static uint8_t edge = 0; // 0 - ждём восходящий, 1 - ждём нисходящий 
 
     if (timer_get_flag(TIM1, TIM_SR_CC1IF)) {
+        timer_clear_flag(TIM1, TIM_SR_CC1IF); // Сбрасываем флаг в начале во избежание залипания флага
+
         if (edge == 0) {
             // Восходящий фронт
             capture_rising = TIM_CCR1(TIM1);
@@ -73,15 +90,26 @@ void tim1_cc_isr(void) {
             // Нисходящий фронт
             capture_falling = TIM_CCR1(TIM1);
             pulse_width = capture_falling - capture_rising; // Длительность импульса
-            range_output = (pulse_width / 147) * 2.54;
+            range_output = pulse_width / 58;
             capture_done = 1;
             timer_ic_set_polarity(TIM1, TIM_IC1, TIM_IC_RISING); // Возвращаем на восходящий
             edge = 0;
         }
-        timer_clear_flag(TIM1, TIM_SR_CC1IF); // Сбрасываем флаг
+        
     }
 }
 
+void uart_puts(char *string) {
+    while (*string) {
+        usart_send_blocking(USART1, *string);
+        string++;
+    }
+}
+
+void uart_putln(char *string) {
+    uart_puts(string);
+    uart_puts("\r\n");
+}
 
 //==============================================================================
 
@@ -89,12 +117,14 @@ int main() {
     clock_setup();
     gpio_setup();
     tim1_setup();
+    usart_setup();
 
     rcc_periph_clock_enable(RCC_GPIOE);
 
     gpio_mode_setup(GPIOE, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO15 | GPIO12);
 
-    
+
+
     while (true) {
 
         if (capture_done) {
@@ -103,10 +133,12 @@ int main() {
             gpio_toggle(GPIOE, GPIO12);
         }
 
-        gpio_toggle(GPIOE, GPIO15);
-        
+        uart_putln("LED on");
+        gpio_set(GPIOE, GPIO15);
         for (volatile uint32_t i = 0; i<2'000'000; ++i);
-
+        uart_putln("LED off");
+        gpio_clear(GPIOE, GPIO15);
+        for (volatile uint32_t i = 0; i<2'000'000; ++i);
     }
 
 }
