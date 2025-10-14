@@ -2,8 +2,10 @@
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/cm3/nvic.h>
-
+#include <libopencm3/stm32/usart.h>
 #include <stdio.h>
+
+// ЗЕЛЕНЫЙ TX, БЕЛЫЙ RX
 
 //gpio - general purpose input-output
 
@@ -13,22 +15,21 @@ volatile uint32_t capture_falling = 0;
 volatile uint32_t pulse_width = 0;
 volatile uint8_t capture_done = 0;
 
+volatile double range_output = 0;
+
 void clock_setup(void) {
     rcc_clock_setup_hsi(&rcc_hsi_configs[RCC_CLOCK_HSI_64MHZ]);
    
     rcc_periph_clock_enable(RCC_GPIOA);
+
     rcc_periph_clock_enable(RCC_TIM1);
-    rcc_periph_clock_enable(RCC_USART1);
 }
 
 void gpio_setup(void) {
     //PA8 в TIM1_CH1(PWM)
-    gpio_mode_setup(GPIO_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO_PIN);
-    gpio_set_af(GPIO_PORT, GPIO_AF6, GPIO_PIN);
-
-    //Настраиваем PA9 (TX) и PA10 (RX) для USART1
-    gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO9 | GPIO10);
-    gpio_set_af(GPIOA, GPIO_AF7, GPIO9 | GPIO10);
+    gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO8);
+    gpio_set_af(GPIOA, GPIO_AF6, GPIO8);
+    
 }
 
 
@@ -45,6 +46,9 @@ void tim1_setup(void) {
     timer_ic_set_filter(TIM1, TIM_IC1, TIM_IC_CK_INT_N_2); // Фильтр для подавления шумов
     timer_ic_set_prescaler(TIM1, TIM_IC1, TIM_IC_PSC_OFF); // Без предделителя
     timer_ic_set_polarity(TIM1, TIM_IC1, TIM_IC_RISING); // Захват на восходящем фронте
+
+    // Включаем канал захвата
+    timer_ic_enable(TIM1, TIM_IC1);
 
     // Включаем прерывание для захвата
     timer_enable_irq(TIM1, TIM_DIER_CC1IE);
@@ -69,6 +73,7 @@ void tim1_cc_isr(void) {
             // Нисходящий фронт
             capture_falling = TIM_CCR1(TIM1);
             pulse_width = capture_falling - capture_rising; // Длительность импульса
+            range_output = (pulse_width / 147) * 2.54;
             capture_done = 1;
             timer_ic_set_polarity(TIM1, TIM_IC1, TIM_IC_RISING); // Возвращаем на восходящий
             edge = 0;
@@ -85,17 +90,17 @@ int main() {
     gpio_setup();
     tim1_setup();
 
-    char buffer[64];
-
     rcc_periph_clock_enable(RCC_GPIOE);
 
-    gpio_mode_setup(GPIOE, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO15);
+    gpio_mode_setup(GPIOE, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO15 | GPIO12);
 
     
     while (true) {
 
         if (capture_done) {
-
+            gpio_toggle(GPIOE, GPIO12);
+            for (volatile uint32_t i = 0; i<2'000'000; ++i);
+            gpio_toggle(GPIOE, GPIO12);
         }
 
         gpio_toggle(GPIOE, GPIO15);
