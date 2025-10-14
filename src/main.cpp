@@ -2,18 +2,10 @@
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/cm3/nvic.h>
-#include <libopencm3/stm32/usart.h>
+
 #include <stdio.h>
 
-// ЗЕЛЕНЫЙ TX, БЕЛЫЙ RX
-
 //gpio - general purpose input-output
-
-// макросы для удобства
-#define UART_PORT USART1 //какой порт юарта
-#define UART_BAUDRATE 115200 //какой бодрейт
-#define GPIO_PORT GPIOA //какой порт
-#define GPIO_PIN GPIO8 //какой пин под PWM/Input Capture
 
 // Переменные для хранения значений захвата
 volatile uint32_t capture_rising = 0;
@@ -39,15 +31,6 @@ void gpio_setup(void) {
     gpio_set_af(GPIOA, GPIO_AF7, GPIO9 | GPIO10);
 }
 
-void usart_setup(void) {
-    usart_set_baudrate(UART_PORT, UART_BAUDRATE);
-    usart_set_databits(UART_PORT, 8);
-    usart_set_stopbits(UART_PORT, USART_STOPBITS_1);
-    usart_set_mode(UART_PORT, USART_MODE_TX_RX); //Включаем TX и RX
-    usart_set_parity(UART_PORT, USART_PARITY_NONE);
-    usart_set_flow_control(UART_PORT, USART_FLOWCONTROL_NONE);
-    usart_enable(UART_PORT);
-}
 
 void tim1_setup(void) {
     // Сбрасываем таймер
@@ -94,18 +77,12 @@ void tim1_cc_isr(void) {
     }
 }
 
-void usart_send_string(const char *str) {
-    while (*str) {
-        usart_send_blocking(UART_PORT, *str++);
-        for (volatile uint32_t i = 0; i<8000; ++i);
-    }
-}
+
 //==============================================================================
 
 int main() {
     clock_setup();
     gpio_setup();
-    usart_setup();
     tim1_setup();
 
     char buffer[64];
@@ -118,9 +95,7 @@ int main() {
     while (true) {
 
         if (capture_done) {
-            snprintf(buffer, sizeof(buffer), "Pulse width: %lu us\r\n", pulse_width);
-            usart_send_string(buffer);
-            capture_done = 0; // Сбрасываем флаг
+
         }
 
         gpio_toggle(GPIOE, GPIO15);
