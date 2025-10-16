@@ -52,10 +52,8 @@ void tim1_setup(void) {
     // Сбрасываем таймер
     rcc_periph_reset_pulse(RST_TIM1);
 
-    // Настраиваем таймер на частоту, например, 1 МГц (1 мкс на тик)
-    // Используем системную частоту (по умолчанию)
-    timer_set_prescaler(TIM1, (64000000 / 1000000) - 1); // 1 МГц
-    timer_set_period(TIM1, 0xFFFF); // Максимальный период
+    timer_set_prescaler(TIM1, 64 - 1); // ВСЁ НОРМАЛЬНО!! ЗДЕСЬ ВРЕМЯ ТИКА СОСТАВЛЯЕТ 1 МКС (64/64'000'000)
+    timer_set_period(TIM1, 50000 - 1); //а вот здесь стоит увеличить время прерывания, до 100 мс хотя бы
 
     timer_ic_set_input(TIM1, TIM_IC1, TIM_IC_IN_TI1); // Прямой вход c TI1 (PA8)
     timer_ic_set_filter(TIM1, TIM_IC1, TIM_IC_CK_INT_N_2); // Фильтр для подавления шумов
@@ -78,7 +76,7 @@ void tim1_cc_isr(void) {
     static uint8_t edge = 0; // 0 - ждём восходящий, 1 - ждём нисходящий 
 
     if (timer_get_flag(TIM1, TIM_SR_CC1IF)) {
-        timer_clear_flag(TIM1, TIM_SR_CC1IF); // Сбрасываем флаг в начале во избежание залипания флага
+        
 
         if (edge == 0) {
             // Восходящий фронт
@@ -89,12 +87,22 @@ void tim1_cc_isr(void) {
         else {
             // Нисходящий фронт
             capture_falling = TIM_CCR1(TIM1);
-            pulse_width = capture_falling - capture_rising; // Длительность импульса
-            range_output = pulse_width / 58;
+
+            if (capture_falling > capture_rising) {
+                pulse_width = capture_falling - capture_rising; // Длительность импульса (в микросекундах)
+            }
+            else {
+                // если было переполнение между фронтами
+                pulse_width = (50000 - capture_falling + capture_rising + 1);
+            }
+            
+            range_output = (pulse_width / 147) * 0.0254; //147uS per inch (1 inch = 2.54cm = 0.0254m)
             capture_done = 1;
             timer_ic_set_polarity(TIM1, TIM_IC1, TIM_IC_RISING); // Возвращаем на восходящий
             edge = 0;
         }
+
+        timer_clear_flag(TIM1, TIM_SR_CC1IF); // Сбрасываем флаг 
         
     }
 }
@@ -128,9 +136,9 @@ int main() {
     while (true) {
 
         if (capture_done) {
-            gpio_toggle(GPIOE, GPIO12);
+            gpio_set(GPIOE, GPIO12);
             for (volatile uint32_t i = 0; i<2'000'000; ++i);
-            gpio_toggle(GPIOE, GPIO12);
+            gpio_clear(GPIOE, GPIO12);
         }
 
         uart_putln("LED on");
