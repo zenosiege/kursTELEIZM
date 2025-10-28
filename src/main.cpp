@@ -53,7 +53,7 @@ void tim1_setup(void) {
     rcc_periph_reset_pulse(RST_TIM1);
 
     timer_set_prescaler(TIM1, 64 - 1); // ВСЁ НОРМАЛЬНО!! ЗДЕСЬ ВРЕМЯ ТИКА СОСТАВЛЯЕТ 1 МКС (64/64'000'000)
-    timer_set_period(TIM1, 50000 - 1); //а вот здесь стоит увеличить время прерывания, до 100 мс хотя бы
+    timer_set_period(TIM1, 50000 - 1); //а вот здесь стоит увеличить время прерывания, до 50 мс хотя бы
 
     timer_ic_set_input(TIM1, TIM_IC1, TIM_IC_IN_TI1); // Прямой вход c TI1 (PA8)
     timer_ic_set_filter(TIM1, TIM_IC1, TIM_IC_CK_INT_N_2); // Фильтр для подавления шумов
