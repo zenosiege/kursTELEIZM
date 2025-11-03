@@ -6,15 +6,42 @@
 #include <stdio.h>
 #include <math.h>
 
+/*
+ПРОТОКОЛ:
+
+на стороне передающего (данные с сенсора):
+idle -> collect -> transmit -> idle
+
+на стороне принимающего:
+idle -> accept -> transmit -> idle
+
+Передающая сторона(далее СОД - сторона, отдающая данные) получает сигнал из accept
+со стороны принимающей(далее СПД - сторона приёма данных).
+
+СОД переходит в состояние collect, где получаются данные с датчиков.
+
+Когда данные получены, СОД переходит в состояние transmit, где формирует посылку и отправляет её
+ЮАРТ работает таким образом, что строка на самом деле отправляет побитово, поэтому нужно сделать
+опен-флаг (открывающий) и клоз-флаг (закрывающий). Между будет передаваться информация о расстоянии.
+
+После того, как закрывающий флаг будет отправлен, СОД переходит в idle
+
+Вместе с этим СПД переходит в transmit, где по каналу связи (радиоканалу, к примеру) передаёт данные другому человеку
+И возвращается в idle, откуда может перейти в accept по команде (по кнопке, к примеру)
+
+Чтобы сделать схему универсальной, схему СПД можно ограничить до accept. Главное - принять и передать сигнал.
+
+[ПРОБЛЕМА, КОТОРУЮ МОЖНО ПРОИГНОРИРОВАТЬ ПОКА ЧТО
+
+В КАКОЙ МОМЕНТ ОТПРАВЛЯТЬ ДАННЫЕ С ДАТЧИКА? ИБО ОН МОЖЕТ ОТОСЛАТЬ ПРОШЛЫЕ И ОТОСЛАТЬ НОВЫЕ]
+
+*/
+
 // ЗЕЛЕНЫЙ TX, БЕЛЫЙ RX
 
 //gpio - general purpose input-output
 
 // Переменные для хранения значений захвата
-volatile uint32_t capture_rising = 0;
-volatile uint32_t capture_falling = 0;
-volatile uint32_t pulse_width = 0;
-volatile uint8_t capture_done = 0;
 
 volatile double range_output = 0;
 
@@ -38,10 +65,6 @@ void clock_setup(void) {
 }
 
 void gpio_setup(void) {
-    //PA8 в TIM1_CH1(PWM)
-    gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO8);
-    gpio_set_af(GPIOA, GPIO_AF6, GPIO8);
-    
     //USART1
     gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO2 | GPIO3);
     gpio_set_af(GPIOA, GPIO_AF7, GPIO2 | GPIO3); //PA2 (TX - зеленый) и PA3(RX - белый)
@@ -55,57 +78,10 @@ void tim1_setup(void) {
     timer_set_prescaler(TIM1, 64 - 1); // ВСЁ НОРМАЛЬНО!! ЗДЕСЬ ВРЕМЯ ТИКА СОСТАВЛЯЕТ 1 МКС (64/64'000'000)
     timer_set_period(TIM1, 50000 - 1); //а вот здесь стоит увеличить время прерывания, до 50 мс хотя бы
 
-    timer_ic_set_input(TIM1, TIM_IC1, TIM_IC_IN_TI1); // Прямой вход c TI1 (PA8)
-    timer_ic_set_filter(TIM1, TIM_IC1, TIM_IC_CK_INT_N_2); // Фильтр для подавления шумов
-    timer_ic_set_prescaler(TIM1, TIM_IC1, TIM_IC_PSC_OFF); // Без предделителя
-    timer_ic_set_polarity(TIM1, TIM_IC1, TIM_IC_RISING); // Захват на восходящем фронте
-
-    // Включаем канал захвата
-    timer_ic_enable(TIM1, TIM_IC1);
-
-    // Включаем прерывание для захвата
-    timer_enable_irq(TIM1, TIM_DIER_CC1IE);
-    nvic_enable_irq(NVIC_TIM1_CC_IRQ);
-
     // Включаем таймер
     timer_enable_counter(TIM1);
 }
 
-// Обработчик прерывания для захвата
-void tim1_cc_isr(void) {
-    static uint8_t edge = 0; // 0 - ждём восходящий, 1 - ждём нисходящий 
-
-    if (timer_get_flag(TIM1, TIM_SR_CC1IF)) {
-        
-
-        if (edge == 0) {
-            // Восходящий фронт
-            capture_rising = TIM_CCR1(TIM1);
-            timer_ic_set_polarity(TIM1, TIM_IC1, TIM_IC_FALLING); // Меняем на нисходящий
-            edge = 1;
-        }
-        else {
-            // Нисходящий фронт
-            capture_falling = TIM_CCR1(TIM1);
-
-            if (capture_falling > capture_rising) {
-                pulse_width = capture_falling - capture_rising; // Длительность импульса (в микросекундах)
-            }
-            else {
-                // если было переполнение между фронтами
-                pulse_width = (50000 - capture_falling + capture_rising + 1);
-            }
-            
-            range_output = (pulse_width / 147) * 0.0254; //147uS per inch (1 inch = 2.54cm = 0.0254m)
-            capture_done = 1;
-            timer_ic_set_polarity(TIM1, TIM_IC1, TIM_IC_RISING); // Возвращаем на восходящий
-            edge = 0;
-        }
-
-        timer_clear_flag(TIM1, TIM_SR_CC1IF); // Сбрасываем флаг 
-        
-    }
-}
 
 void uart_puts(char *string) {
     while (*string) {
@@ -131,16 +107,7 @@ int main() {
 
     gpio_mode_setup(GPIOE, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO15 | GPIO12);
 
-
-
     while (true) {
-
-        if (capture_done) {
-            gpio_set(GPIOE, GPIO12);
-            for (volatile uint32_t i = 0; i<2'000'000; ++i);
-            gpio_clear(GPIOE, GPIO12);
-        }
-
         uart_putln("LED on");
         gpio_set(GPIOE, GPIO15);
         for (volatile uint32_t i = 0; i<2'000'000; ++i);
