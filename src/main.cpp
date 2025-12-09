@@ -177,28 +177,56 @@ int main() {
 
     gpio_mode_setup(GPIOE, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO15 | GPIO12);
 
-    /*
+    
     // i - idle, c - collect, t - transmit
 
     char status = 'i';
 
         
-    */
+    
 
     while (true) {
-        /*
+        
+        char getCommand = usart_recv(USART2);
+
+        gpio_set(GPIOE, GPIO12);
         switch(status)
         {
             case 'i':
-            
+                if (getCommand = 'c') {
+                    status = 'c';
+                    usart_send_blocking(USART2, '>');
+                }
+                break;
             case 'c':
+                gpio_set(GPIOE, GPIO15);
+                for (volatile uint32_t i = 0; i<2'000'000; ++i);
+                gpio_clear(GPIOE, GPIO15);
+                for (volatile uint32_t i = 0; i<2'000'000; ++i);
 
+                bool cFlag = false; // collect flag
+                double data = 0.0;
+                while (cFlag) {
+                    data = 6.39;
+                    cFlag = true;    
+                }
+                status = 't';
+                break;
             case 't':
+                usart_send_blocking(USART2, '<');
+                send_double(data);
+                status = 'i';
+
+                break;
 
             default:
                 break;
         }
-        */
+        gpio_clear(GPIOE, GPIO12);
+
+    
+
+        /*
         if (capture_done) {
             gpio_set(GPIOE, GPIO12);
             send_double(range_output);
@@ -212,6 +240,7 @@ int main() {
         uart_putln("LED off");
         gpio_clear(GPIOE, GPIO15);
         for (volatile uint32_t i = 0; i<2'000'000; ++i);
+        */
     }
 
 }
