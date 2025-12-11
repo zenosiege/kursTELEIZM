@@ -151,21 +151,15 @@ void uart_putln(char *string) {
     uart_puts("\r\n");
 }
 
-void send_double(double value)
-{
+void send_float(float value) {
     char buf[32];
-    int int_part = (int)value;
-    int frac_part = (int)fabs((value - int_part) * 1000); // 3 знака после запятой
-
-    if (value < 0 && int_part == 0)
-        snprintf(buf, sizeof(buf), "-%d.%03d", int_part, frac_part);
-    else
-        snprintf(buf, sizeof(buf), "%d.%03d", int_part, frac_part);
-
+    snprintf(buf, sizeof(buf), "%.3f", value);
     uart_putln(buf);
 }
 
+
 //==============================================================================
+float data = 0.0f;
 
 int main() {
     clock_setup();
@@ -183,6 +177,7 @@ int main() {
     char status = 'i';
 
         
+    bool cFlag = false; // collect flag
     
 
     while (true) {
@@ -193,7 +188,7 @@ int main() {
         switch(status)
         {
             case 'i':
-                if (getCommand = 'c') {
+                if (getCommand == 'c') {
                     status = 'c';
                     usart_send_blocking(USART2, '>');
                 }
@@ -204,17 +199,17 @@ int main() {
                 gpio_clear(GPIOE, GPIO15);
                 for (volatile uint32_t i = 0; i<2'000'000; ++i);
 
-                bool cFlag = false; // collect flag
-                double data = 0.0;
+                cFlag = false;
+
                 while (cFlag) {
-                    data = 6.39;
+                    data = 6.39f;
                     cFlag = true;    
                 }
                 status = 't';
                 break;
             case 't':
                 usart_send_blocking(USART2, '<');
-                send_double(data);
+                send_float(6.39f);
                 status = 'i';
 
                 break;
@@ -222,7 +217,10 @@ int main() {
             default:
                 break;
         }
+
+        for (volatile uint32_t i = 0; i<500'000; ++i);
         gpio_clear(GPIOE, GPIO12);
+        for (volatile uint32_t i = 0; i<500'000; ++i);
 
     
 
