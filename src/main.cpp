@@ -8,47 +8,19 @@
 #include <string>
 
 
-
-
-/*
-ПРОТОКОЛ:
-на стороне передающего (данные с сенсора):
-idle -> collect -> transmit -> idle
-на стороне принимающего:
-idle -> accept -> transmit -> idle
-Передающая сторона(далее СОД - сторона, отдающая данные) получает сигнал из accept
-со стороны принимающей(далее СПД - сторона приёма данных).
-СОД переходит в состояние collect, где получаются данные с датчиков.
-Когда данные получены, СОД переходит в состояние transmit, где формирует посылку и отправляет её
-ЮАРТ работает таким образом, что строка на самом деле отправляет побитово, поэтому нужно сделать
-опен-флаг (открывающий) и клоз-флаг (закрывающий). Между будет передаваться информация о расстоянии.
-
-После того, как закрывающий флаг будет отправлен, СОД переходит в idle
-
-Вместе с этим СПД переходит в transmit, где по каналу связи (радиоканалу, к примеру) передаёт данные другому человеку
-
-И возвращается в idle, откуда может перейти в accept по команде (по кнопке, к примеру)
-
-Чтобы сделать схему универсальной, схему СПД можно ограничить до accept. Главное - принять и передать сигнал.
-
-[ПРОБЛЕМА, КОТОРУЮ МОЖНО ПРОИГНОРИРОВАТЬ ПОКА ЧТО
-В КАКОЙ МОМЕНТ ОТПРАВЛЯТЬ ДАННЫЕ С ДАТЧИКА? ИБО ОН МОЖЕТ ОТОСЛАТЬ ПРОШЛЫЕ И ОТОСЛАТЬ НОВЫЕ]
-
-
-*/
-
-
-// ЗЕЛЕНЫЙ TX, БЕЛЫЙ RX
-
-//gpio - general purpose input-output
+#define PERIOD 50000
+#define MAX_RANGE_M 6.5
 
 // Переменные для хранения значений захвата
+
 volatile uint32_t capture_rising = 0;
 volatile uint32_t capture_falling = 0;
 volatile uint32_t pulse_width = 0;
 volatile uint8_t capture_done = 0;
 
+// Переменная для вывода расстояния
 volatile double range_output = 0;
+volatile double last_valid_range = 0;
 
 void usart_setup(void) {
     usart_set_baudrate(USART2, 9600);
@@ -74,9 +46,9 @@ void gpio_setup(void) {
     gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO8);
     gpio_set_af(GPIOA, GPIO_AF6, GPIO8);
     
-    //USART1
+    //USART2
     gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO2 | GPIO3);
-    gpio_set_af(GPIOA, GPIO_AF7, GPIO2 | GPIO3); //PA2 (TX - зеленый) и PA3(RX - белый) (НАДО ВКЛЮЧАТЬ ПЕРЕКРЁСТНО!!)
+    gpio_set_af(GPIOA, GPIO_AF7, GPIO2 | GPIO3); //PA2 (TX) и PA3(RX)
 }
 
 
@@ -84,10 +56,10 @@ void tim1_setup(void) {
     // Сбрасываем таймер
     rcc_periph_reset_pulse(RST_TIM1);
 
-    timer_set_prescaler(TIM1, 64 - 1); // ВСЁ НОРМАЛЬНО!! ЗДЕСЬ ВРЕМЯ ТИКА СОСТАВЛЯЕТ 1 МКС (64/64'000'000)
-    timer_set_period(TIM1, 50000 - 1); //а вот здесь стоит увеличить время прерывания, до 50 мс хотя бы
+    timer_set_prescaler(TIM1, 64 - 1); // ЗДЕСЬ ВРЕМЯ ТИКА СОСТАВЛЯЕТ 1 МКС (64/64'000'000)
+    timer_set_period(TIM1, PERIOD - 1); // 50мс, потому что время полного цикла записи данных составляет 49мс
 
-    timer_ic_set_input(TIM1, TIM_IC1, TIM_IC_IN_TI1); // Прямой вход c TI1 (PA8)
+    timer_ic_set_input(TIM1, TIM_IC1, TIM_IC_IN_TI1); // Прямой вход c TIM1 (PA8)
     timer_ic_set_filter(TIM1, TIM_IC1, TIM_IC_CK_INT_N_2); // Фильтр для подавления шумов
     timer_ic_set_prescaler(TIM1, TIM_IC1, TIM_IC_PSC_OFF); // Без предделителя
     timer_ic_set_polarity(TIM1, TIM_IC1, TIM_IC_RISING); // Захват на восходящем фронте
@@ -125,7 +97,7 @@ void tim1_cc_isr(void) {
             }
             else {
                 // если было переполнение между фронтами
-                pulse_width = (50000 - capture_falling + capture_rising + 1);
+                pulse_width = (PERIOD - capture_falling + capture_rising + 1);
             }
             
             range_output = (pulse_width / 147) * 0.0254; //147uS per inch (1 inch = 2.54cm = 0.0254m)
@@ -177,41 +149,31 @@ int main() {
 
     gpio_mode_setup(GPIOE, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO15 | GPIO12);
 
-    /*
-    // i - idle, c - collect, t - transmit
-
-    char status = 'i';
-
-        
-    */
+    // Добавляем задержку после включения
+    for (volatile uint32_t i = 0; i < 250000; i++); 
 
     while (true) {
-        /*
-        switch(status)
-        {
-            case 'i':
-            
-            case 'c':
-
-            case 't':
-
-            default:
-                break;
-        }
-        */
         if (capture_done) {
             gpio_set(GPIOE, GPIO12);
+
+            // Игнорируем или используем предыдущее корректное значение
+            if (range_output > MAX_RANGE_M) {
+                range_output = last_valid_range;
+            } else {
+                last_valid_range = range_output;
+            }
+
             send_double(range_output);
-            for (volatile uint32_t i = 0; i<2'000'000; ++i);
+            for (volatile uint32_t i = 0; i<1'000'000; ++i);
             gpio_clear(GPIOE, GPIO12);
         }
 
-        uart_putln("LED on");
+
         gpio_set(GPIOE, GPIO15);
-        for (volatile uint32_t i = 0; i<2'000'000; ++i);
-        uart_putln("LED off");
+        for (volatile uint32_t i = 0; i<500'000; ++i);
+
         gpio_clear(GPIOE, GPIO15);
-        for (volatile uint32_t i = 0; i<2'000'000; ++i);
+        for (volatile uint32_t i = 0; i<500'000; ++i);
     }
 
 }
