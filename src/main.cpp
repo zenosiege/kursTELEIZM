@@ -9,7 +9,7 @@
 
 
 #define PERIOD 50000
-#define MAX_RANGE_M 6.5
+#define MAX_RANGE_MM 6500
 
 // Переменные для хранения значений захвата
 
@@ -19,8 +19,8 @@ volatile uint32_t pulse_width = 0;
 volatile uint8_t capture_done = 0;
 
 // Переменная для вывода расстояния
-volatile double range_output = 0;
-volatile double last_valid_range = 0;
+volatile int range_output = 0;
+volatile int last_valid_range = 0;
 
 void usart_setup(void) {
     usart_set_baudrate(USART2, 9600);
@@ -32,6 +32,7 @@ void usart_setup(void) {
     usart_enable(USART2);
 
 }
+
 
 void clock_setup(void) {
     rcc_clock_setup_hsi(&rcc_hsi_configs[RCC_CLOCK_HSI_64MHZ]);
@@ -100,7 +101,7 @@ void tim1_cc_isr(void) {
                 pulse_width = (PERIOD - capture_falling + capture_rising + 1);
             }
             
-            range_output = (pulse_width / 147) * 0.0254; //147uS per inch (1 inch = 2.54cm = 0.0254m)
+            range_output = ceil((pulse_width / 147) * 25.4); //147uS per inch (1 inch = 25.4мм = 2.54cm = 0.0254m)
             capture_done = 1;
             timer_ic_set_polarity(TIM1, TIM_IC1, TIM_IC_RISING); // Возвращаем на восходящий
             edge = 0;
@@ -137,7 +138,17 @@ void send_double(double value)
     uart_putln(buf);
 }
 
+void uart_send_int(int value) {
+    char buf[32];                // достаточно для int32
+    snprintf(buf, sizeof(buf), "00%d", value); //два нуля в начале для устранения пропадающих чисел
+
+    usart_send_blocking(USART2, '<');
+    uart_puts(buf);
+    usart_send_blocking(USART2, '>');
+}
+
 //==============================================================================
+volatile int data;
 
 int main() {
     clock_setup();
@@ -147,33 +158,94 @@ int main() {
 
     rcc_periph_clock_enable(RCC_GPIOE);
 
-    gpio_mode_setup(GPIOE, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO15 | GPIO12);
+    gpio_mode_setup(GPIOE, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO15 | GPIO12 | GPIO10);
 
     // Добавляем задержку после включения
     for (volatile uint32_t i = 0; i < 250000; i++); 
 
+    char status = 'i';
+
+        
+    bool cFlag = false; // collect flag
+    
     while (true) {
-        if (capture_done) {
-            gpio_set(GPIOE, GPIO12);
+        
+        char getCommand = usart_recv(USART2);
 
-            // Игнорируем или используем предыдущее корректное значение
-            if (range_output > MAX_RANGE_M) {
-                range_output = last_valid_range;
-            } else {
-                last_valid_range = range_output;
-            }
+        gpio_set(GPIOE, GPIO12);
+        switch(status)
+        {
+            case 'i':
+                if (getCommand == 'c') {
+                    status = 'c';
+                    usart_send_blocking(USART2, '>');
+                }
+                break;
+            case 'c':
+                gpio_set(GPIOE, GPIO15);
+                for (volatile uint32_t i = 0; i<2'000'000; ++i);
+                gpio_clear(GPIOE, GPIO15);
+                for (volatile uint32_t i = 0; i<2'000'000; ++i);
 
-            send_double(range_output);
-            for (volatile uint32_t i = 0; i<1'000'000; ++i);
-            gpio_clear(GPIOE, GPIO12);
+                cFlag = true;
+
+                while (cFlag) {
+                    if (capture_done) {
+                        gpio_set(GPIOE, GPIO10);
+
+                        // Игнорируем или используем предыдущее корректное значение
+                        if (range_output > MAX_RANGE_MM) {
+                            range_output = last_valid_range;
+                        } else {
+                            last_valid_range = range_output;
+                        }
+
+                        cFlag = false;   
+                        data = range_output;
+                        for (volatile uint32_t i = 0; i<1'000'000; ++i);
+                        gpio_clear(GPIOE, GPIO10);
+                    }   
+                }
+                status = 't';
+                break;
+            case 't':
+                // < передаётся сам. > закрывает это дело
+                uart_send_int(data);
+                //send_float(6.39f);
+                status = 'i';
+
+                break;
+
+            default:
+                break;
         }
 
-
-        gpio_set(GPIOE, GPIO15);
+        for (volatile uint32_t i = 0; i<500'000; ++i);
+        gpio_clear(GPIOE, GPIO12);
         for (volatile uint32_t i = 0; i<500'000; ++i);
 
-        gpio_clear(GPIOE, GPIO15);
-        for (volatile uint32_t i = 0; i<500'000; ++i);
+    
+        // if (capture_done) {
+        //     gpio_set(GPIOE, GPIO12);
+
+        //     // Игнорируем или используем предыдущее корректное значение
+        //     if (range_output > MAX_RANGE_M) {
+        //         range_output = last_valid_range;
+        //     } else {
+        //         last_valid_range = range_output;
+        //     }
+
+        //     uart_send_int(range_output);
+        //     for (volatile uint32_t i = 0; i<1'000'000; ++i);
+        //     gpio_clear(GPIOE, GPIO12);
+        // }
+
+
+        // gpio_set(GPIOE, GPIO15);
+        // for (volatile uint32_t i = 0; i<500'000; ++i);
+
+        // gpio_clear(GPIOE, GPIO15);
+        // for (volatile uint32_t i = 0; i<500'000; ++i);
     }
 
 }
