@@ -124,19 +124,6 @@ void uart_putln(char *string) {
     uart_puts("\r\n");
 }
 
-void send_double(double value)
-{
-    char buf[32];
-    int int_part = (int)value;
-    int frac_part = (int)fabs((value - int_part) * 1000); // 3 знака после запятой
-
-    if (value < 0 && int_part == 0)
-        snprintf(buf, sizeof(buf), "-%d.%03d", int_part, frac_part);
-    else
-        snprintf(buf, sizeof(buf), "%d.%03d", int_part, frac_part);
-
-    uart_putln(buf);
-}
 
 void uart_send_int(int value) {
     char buf[32];                // достаточно для int32
@@ -209,7 +196,7 @@ int main() {
                 status = 't';
                 break;
             case 't':
-                // < передаётся сам. > закрывает это дело
+                // < > передаются сами. 
                 uart_send_int(data);
                 //send_float(6.39f);
                 status = 'i';
@@ -224,28 +211,6 @@ int main() {
         gpio_clear(GPIOE, GPIO12);
         for (volatile uint32_t i = 0; i<500'000; ++i);
 
-    
-        // if (capture_done) {
-        //     gpio_set(GPIOE, GPIO12);
-
-        //     // Игнорируем или используем предыдущее корректное значение
-        //     if (range_output > MAX_RANGE_M) {
-        //         range_output = last_valid_range;
-        //     } else {
-        //         last_valid_range = range_output;
-        //     }
-
-        //     uart_send_int(range_output);
-        //     for (volatile uint32_t i = 0; i<1'000'000; ++i);
-        //     gpio_clear(GPIOE, GPIO12);
-        // }
-
-
-        // gpio_set(GPIOE, GPIO15);
-        // for (volatile uint32_t i = 0; i<500'000; ++i);
-
-        // gpio_clear(GPIOE, GPIO15);
-        // for (volatile uint32_t i = 0; i<500'000; ++i);
     }
 
 }
