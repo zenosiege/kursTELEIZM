@@ -74,7 +74,7 @@ void gpio_setup(void) {
     gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO8);
     gpio_set_af(GPIOA, GPIO_AF6, GPIO8);
     
-    //USART1
+    //USART2
     gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO2 | GPIO3);
     gpio_set_af(GPIOA, GPIO_AF7, GPIO2 | GPIO3); //PA2 (TX - зеленый) и PA3(RX - белый) (НАДО ВКЛЮЧАТЬ ПЕРЕКРЁСТНО!!)
 }
@@ -179,7 +179,7 @@ int main() {
         
     bool cFlag = false; // collect flag
     
-
+    char valueSent[] = "9642";
     while (true) {
         
         char getCommand = usart_recv(USART2);
@@ -209,7 +209,8 @@ int main() {
                 break;
             case 't':
                 usart_send_blocking(USART2, '<');
-                send_float(6.39f);
+                uart_putln(valueSent);
+                //send_float(6.39f);
                 status = 'i';
 
                 break;
